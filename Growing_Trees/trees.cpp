@@ -15,6 +15,15 @@ bool isAdjacent(const sf::Vector2f& pos1, const sf::Vector2f& pos2, float gridSi
     return (dx <= gridSize && dy <= gridSize) && (dx + dy != 0);
 }
 
+void removeLine(std::vector<Line>& lines, const sf::Vector2f& pos1, const sf::Vector2f& pos2) {
+    for (auto it = lines.begin(); it != lines.end(); ++it) {
+        if ((it->start == pos1 && it->end == pos2) || (it->start == pos2 && it->end == pos1)) {
+            lines.erase(it);
+            break;
+        }
+    }
+}
+
 int main()
 {
     // 创建一个窗口
@@ -55,6 +64,8 @@ int main()
     sf::Clock clock;
     float blinkTime = 0.5f; // 闪烁时间间隔
 
+    int triangleCircleCount = 3; // 三角形中初始有3个圆点
+
     // 主循环
     while (window.isOpen())
     {
@@ -72,7 +83,7 @@ int main()
 
                     if (!isTriangleSelected && !isCircleSelected)
                     {
-                        if (redTriangle.getGlobalBounds().contains(mousePosF))
+                        if (redTriangle.getGlobalBounds().contains(mousePosF) && triangleCircleCount > 0)
                         {
                             isTriangleSelected = true;
                         }
@@ -85,13 +96,39 @@ int main()
                                     isCircleSelected = true;
                                     selectedCircleBorder.setPosition(it->getPosition());
                                     isCircleBorderVisible = true;
-                                    circles.erase(it); // 删除原先的圆点
                                     break;
                                 }
                             }
                         }
                     }
-                    else if (!isCircleBlinking)
+                    else if (isTriangleSelected && !isCircleBlinking)
+                    {
+                        // 计算方格的中心
+                        sf::Vector2f targetCenter(
+                            std::floor(mousePosF.x / gridSize) * gridSize + gridSize / 2.0f,
+                            std::floor(mousePosF.y / gridSize) * gridSize + gridSize / 2.0f
+                        );
+
+                        // 检查方格是否已有圆点
+                        bool hasCircle = false;
+                        for (const auto& circle : circles)
+                        {
+                            if (circle.getPosition() == targetCenter)
+                            {
+                                hasCircle = true;
+                                break;
+                            }
+                        }
+
+                        if (!hasCircle)
+                        {
+                            // 生成闪烁的红色圆点
+                            blinkingCircle.setPosition(targetCenter);
+                            blinkingCircleCenter = targetCenter;
+                            isCircleBlinking = true;
+                        }
+                    }
+                    else if (isCircleSelected && !isCircleBlinking)
                     {
                         // 计算方格的中心
                         sf::Vector2f targetCenter(
@@ -111,7 +148,7 @@ int main()
                         }
 
                         // 检查目标方格是否在当前选中圆点的周围一圈内
-                        if (isCircleSelected && !isAdjacent(selectedCircleBorder.getPosition(), targetCenter, gridSize))
+                        if (!isAdjacent(selectedCircleBorder.getPosition(), targetCenter, gridSize))
                         {
                             continue; // 如果不在周围一圈内，忽略点击
                         }
@@ -124,24 +161,50 @@ int main()
                             isCircleBlinking = true;
                         }
                     }
-                    else
+                    else if (isCircleBlinking)
                     {
                         if (blinkingCircle.getGlobalBounds().contains(mousePosF))
                         {
                             isCircleBlinking = false;
+
                             if (isTriangleSelected)
                             {
                                 lines.push_back({ redTriangleCenter, blinkingCircleCenter });
                                 isTriangleSelected = false;
+                                triangleCircleCount--; // 减少三角形中的圆点数量
                             }
                             else if (isCircleSelected)
                             {
-                                lines.push_back({ selectedCircleBorder.getPosition(), blinkingCircleCenter });
+                                // 检查是否需要删除连接线段
+                                bool lineRemoved = false;
+                                for (auto it = lines.begin(); it != lines.end(); ++it) {
+                                    if ((it->start == selectedCircleBorder.getPosition() && it->end == blinkingCircleCenter) ||
+                                        (it->start == blinkingCircleCenter && it->end == selectedCircleBorder.getPosition())) {
+                                        lines.erase(it);
+                                        lineRemoved = true;
+                                        break;
+                                    }
+                                }
+
+                                if (!lineRemoved) {
+                                    lines.push_back({ selectedCircleBorder.getPosition(), blinkingCircleCenter });
+                                }
+
                                 isCircleSelected = false;
                                 isCircleBorderVisible = false;
+
+                                // 删除原先的圆点
+                                for (auto it = circles.begin(); it != circles.end(); ++it)
+                                {
+                                    if (it->getPosition() == selectedCircleBorder.getPosition())
+                                    {
+                                        circles.erase(it);
+                                        break;
+                                    }
+                                }
                             }
 
-                            // 保留圆点
+                            // 保留新圆点
                             sf::CircleShape newCircle(circleRadius);
                             newCircle.setOrigin(circleRadius, circleRadius);
                             newCircle.setPosition(blinkingCircleCenter);
